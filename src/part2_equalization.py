@@ -38,8 +38,18 @@ def estimate_zf_equalizer(channel, num_taps):
     if num_taps < 1:
         raise ValueError('num_taps 必须为正整数')
 
-    # TODO: 构造卷积矩阵并求解 ZF 均衡器抽头。
-    raise NotImplementedError('请实现 ZF 均衡器估计')
+    output_length = len(channel) + num_taps - 1
+    convolution_matrix = np.zeros((output_length, num_taps), dtype=float)
+    for row in range(output_length):
+        for col in range(num_taps):
+            channel_index = row - col
+            if 0 <= channel_index < len(channel):
+                convolution_matrix[row, col] = channel[channel_index]
+
+    desired = np.zeros(output_length, dtype=float)
+    desired[output_length // 2] = 1.0
+    taps, *_ = np.linalg.lstsq(convolution_matrix, desired, rcond=None)
+    return taps
 
 
 def apply_fir_filter(signal, taps):
@@ -58,8 +68,9 @@ def apply_fir_filter(signal, taps):
     if signal.ndim != 1 or taps.ndim != 1:
         raise ValueError('signal 和 taps 必须是一维数组')
 
-    # TODO: 使用 np.convolve，并截取与 signal 等长的输出。
-    raise NotImplementedError('请实现 FIR 滤波')
+    if len(taps) == 0:
+        raise ValueError('taps 不能为空')
+    return np.convolve(signal, taps, mode='full')[: len(signal)]
 
 
 def lms_equalizer(rx_train, tx_train, num_taps, step_size=0.01):
@@ -89,8 +100,23 @@ def lms_equalizer(rx_train, tx_train, num_taps, step_size=0.01):
     if num_taps < 1:
         raise ValueError('num_taps 必须为正整数')
 
-    # TODO: 实现 LMS 自适应均衡训练。
-    raise NotImplementedError('请实现 LMS 均衡器')
+    if len(rx_train) < num_taps:
+        raise ValueError('训练序列长度必须不小于 num_taps')
+    if step_size <= 0:
+        raise ValueError('step_size 必须为正数')
+
+    taps = np.zeros(num_taps, dtype=float)
+    taps[num_taps // 2] = 1.0
+    errors = []
+
+    for index in range(num_taps - 1, len(rx_train)):
+        window = rx_train[index - num_taps + 1:index + 1][::-1]
+        output = float(taps @ window)
+        error = tx_train[index] - output
+        taps = taps + step_size * error * window
+        errors.append(error)
+
+    return taps, np.asarray(errors, dtype=float)
 
 
 def run_equalization_demo():
@@ -118,11 +144,11 @@ def run_equalization_demo():
 
         plot_equalization_results(symbols, rx, lms_output, 'equalization_eye_comparison.png')
         plot_mse_curve(errors, 'equalization_mse_curve.png')
-        print('✅ 已生成均衡结果图')
+        print('[OK] 已生成均衡结果图')
     except NotImplementedError as error:
-        print(f'⏸️ 尚未完成核心函数：{error}')
+        print(f'[WARN] 尚未完成核心函数：{error}')
     except Exception as error:
-        print(f'❌ Part 2 运行失败：{error}')
+        print(f'[FAIL] Part 2 运行失败：{error}')
 
 
 if __name__ == '__main__':

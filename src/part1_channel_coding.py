@@ -48,8 +48,9 @@ def hamming74_encode(bits):
     if not np.all((bits == 0) | (bits == 1)):
         raise ValueError('bits 只能包含 0 或 1')
 
-    # TODO: 将 bits reshape 为 (-1, 4)，再与 HAMMING_G 相乘并对 2 取模。
-    raise NotImplementedError('请实现 Hamming(7,4) 编码')
+    blocks = bits.reshape(-1, 4)
+    encoded = (blocks @ HAMMING_G) % 2
+    return encoded.reshape(-1).astype(int)
 
 
 def hamming74_syndrome(codewords):
@@ -70,8 +71,10 @@ def hamming74_syndrome(codewords):
     if codewords.shape[1] != 7:
         raise ValueError('每个 Hamming(7,4) 码字长度必须为 7')
 
-    # TODO: 计算 s = r H^T mod 2。
-    raise NotImplementedError('请实现伴随式计算')
+    if not np.all((codewords == 0) | (codewords == 1)):
+        raise ValueError('codewords 只能包含 0 或 1')
+
+    return (codewords @ HAMMING_H.T % 2).astype(int)
 
 
 def hamming74_decode(received):
@@ -94,8 +97,20 @@ def hamming74_decode(received):
     if received.ndim != 1 or len(received) % 7 != 0:
         raise ValueError('received 必须是一维数组，长度为 7 的倍数')
 
-    # TODO: 使用 hamming74_syndrome 完成单比特纠错，并返回前 4 个信息位。
-    raise NotImplementedError('请实现 Hamming(7,4) 译码')
+    if not np.all((received == 0) | (received == 1)):
+        raise ValueError('received 只能包含 0 或 1')
+
+    codewords = received.reshape(-1, 7).copy()
+    syndromes = hamming74_syndrome(codewords)
+
+    for row_index, syndrome in enumerate(syndromes):
+        if np.all(syndrome == 0):
+            continue
+        matches = np.where(np.all(HAMMING_H.T == syndrome, axis=1))[0]
+        if matches.size:
+            codewords[row_index, matches[0]] ^= 1
+
+    return codewords[:, :4].reshape(-1).astype(int)
 
 
 def convolutional_encode(bits):
@@ -108,8 +123,16 @@ def convolutional_encode(bits):
     if not np.all((bits == 0) | (bits == 1)):
         raise ValueError('bits 只能包含 0 或 1')
 
-    # TODO: 选做任务，可参考课件第6章卷积码部分。
-    raise NotImplementedError('选做：请实现卷积码编码')
+    shift_register = np.zeros(3, dtype=int)
+    output = []
+
+    for bit in np.concatenate([bits, np.zeros(2, dtype=int)]):
+        shift_register[1:] = shift_register[:-1]
+        shift_register[0] = bit
+        output.append((shift_register[0] ^ shift_register[1] ^ shift_register[2]).item())
+        output.append((shift_register[0] ^ shift_register[2]).item())
+
+    return np.asarray(output, dtype=int)
 
 
 def viterbi_decode_hard(received_bits):
@@ -120,8 +143,47 @@ def viterbi_decode_hard(received_bits):
     if len(received_bits) % 2 != 0:
         raise ValueError('卷积码接收序列长度必须是 2 的倍数')
 
-    # TODO: 选做任务，可使用汉明距离作为路径度量。
-    raise NotImplementedError('选做：请实现 Viterbi 硬判决译码')
+    if not np.all((received_bits == 0) | (received_bits == 1)):
+        raise ValueError('received_bits 只能包含 0 或 1')
+
+    received_pairs = received_bits.reshape(-1, 2)
+    num_states = 4
+    inf = np.inf
+    path_metrics = np.full(num_states, inf)
+    path_metrics[0] = 0
+    paths = [[] for _ in range(num_states)]
+
+    for received_pair in received_pairs:
+        next_metrics = np.full(num_states, inf)
+        next_paths = [[] for _ in range(num_states)]
+
+        for state in range(num_states):
+            if not np.isfinite(path_metrics[state]):
+                continue
+
+            previous_1 = (state >> 1) & 1
+            previous_2 = state & 1
+            for bit in (0, 1):
+                expected = np.array([
+                    bit ^ previous_1 ^ previous_2,
+                    bit ^ previous_2,
+                ], dtype=int)
+                next_state = (bit << 1) | previous_1
+                branch_metric = int(np.sum(received_pair != expected))
+                metric = path_metrics[state] + branch_metric
+
+                if metric < next_metrics[next_state]:
+                    next_metrics[next_state] = metric
+                    next_paths[next_state] = paths[state] + [bit]
+
+        path_metrics = next_metrics
+        paths = next_paths
+
+    best_state = 0 if np.isfinite(path_metrics[0]) else int(np.argmin(path_metrics))
+    decoded = np.asarray(paths[best_state], dtype=int)
+    if decoded.size >= 2:
+        decoded = decoded[:-2]
+    return decoded
 
 
 def run_coding_demo():
@@ -152,11 +214,11 @@ def run_coding_demo():
             'Hamming(7,4) 编码前后 BER 对比',
             'coding_ber_curve.png',
         )
-        print('✅ 已生成 results/coding_ber_curve.png')
+        print('[OK] 已生成 results/coding_ber_curve.png')
     except NotImplementedError as error:
-        print(f'⏸️ 尚未完成核心函数：{error}')
+        print(f'[WARN] 尚未完成核心函数：{error}')
     except Exception as error:
-        print(f'❌ Part 1 运行失败：{error}')
+        print(f'[FAIL] Part 1 运行失败：{error}')
 
 
 if __name__ == '__main__':

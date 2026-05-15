@@ -7,6 +7,9 @@ venv/
 .pylint.d/
 .DS_Store
 results/*.png
+!results/coding_ber_curve.png
+!results/equalization_eye_comparison.png
+!results/equalization_mse_curve.png
 results/*.csv
 results/*.json
 !results/.gitkeep
